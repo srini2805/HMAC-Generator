@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HMAC Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+        }
+        h1 {
+            text-align: center;
+        }
+        form {
+            max-width: 400px;
+            margin: auto;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        label {
+            display: block;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        input[type="text"], select, input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            margin: 8px 0;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        p {
+            text-align: center;
+        }
+        pre {
+            background-color: #f9f9f9;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+
+<h1>HMAC Generator</h1>
+<form id="hmacForm">
+    <label for="message">Message:</label>
+    <input type="text" id="message" name="message">
+    <br>
+
+    <label for="fileInput">Upload a File:</label>
+    <input type="file" id="fileInput" name="fileInput">
+    <br>
+
+    <label for="secretKey">Secret Key (optional):</label>
+    <input type="text" id="secretKey" name="secretKey">
+    <br>
+
+    <label for="algorithm">Select Algorithm:</label>
+    <select id="algorithm" name="algorithm">
+        <option value="SHA-256">SHA-256</option>
+        <option value="SHA-384">SHA-384</option>
+        <option value="SHA-512">SHA-512</option>
+    </select>
+    <br>
+
+    <button type="submit">Generate HMAC</button>
+</form>
+
+<p id="errorMsg" style="color: red;"></p>
+<p id="hmacResult" style="font-weight: bold;"></p>
+<pre id="stepsResult"></pre>
+
+<script>
+    document.getElementById('hmacForm').addEventListener('submit', function (event) {
+        event.preventDefault();
+
+        const textInput = document.getElementById('message').value;
+        const fileInput = document.getElementById('fileInput').files[0];
+        const secretKey = document.getElementById('secretKey').value;
+        const algorithm = document.getElementById('algorithm').value;
+        const errorMsg = document.getElementById('errorMsg');
+        const hmacResult = document.getElementById('hmacResult');
+        const stepsResult = document.getElementById('stepsResult');
+
+        // Clear previous messages
+        errorMsg.textContent = '';
+        hmacResult.textContent = '';
+        stepsResult.textContent = '';
+
+        // Validation for text or file input
+        if (textInput && fileInput) {
+            errorMsg.textContent = 'Please enter text OR upload a file, not both.';
+            return;
+        }
+
+        if (!textInput && !fileInput) {
+            errorMsg.textContent = 'Please enter text or upload a file to proceed.';
+            return;
+        }
+
+        // Read the file if uploaded
+        if (fileInput) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const fileContent = e.target.result;
+                generateHMAC(fileContent, secretKey, algorithm);
+            };
+            reader.readAsText(fileInput);
+        } else {
+            generateHMAC(textInput, secretKey, algorithm);
+        }
+    });
+
+    function generateHMAC(message, secretKey, algorithm) {
+    const hmacResult = document.getElementById('hmacResult');
+    const stepsResult = document.getElementById('stepsResult');
+    
+    // Generate a random secret key if none is provided
+    if (!secretKey) {
+        secretKey = crypto.getRandomValues(new Uint8Array(16)).join('');
+    }
+
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secretKey);
+    const messageData = encoder.encode(message);
+
+    const blockSize = 64;
+    const paddedKey = padKey(keyData, blockSize);
+    const ipad = paddedKey.map(byte => byte ^ 0x36);
+    const opad = paddedKey.map(byte => byte ^ 0x5c);
+
+    // Clear previous steps result
+    stepsResult.textContent = ''; // Clear previous messages
+
+    stepsResult.textContent += `Secret Key (Padded):\n${formatKey(paddedKey)}\n\n`;
+    stepsResult.textContent += `Step 1: XOR Key with iPad (0x36):\n${formatKey(ipad)}\n\n`;
+    stepsResult.textContent += `Step 2: XOR Key with oPad (0x5c):\n${formatKey(opad)}\n\n`;
+
+    let key; // Declare the key variable here
+
+    // Import the key
+    crypto.subtle.importKey('raw', paddedKey, { name: 'HMAC', hash: { name: algorithm } }, false, ['sign'])
+        .then(importedKey => {
+            key = importedKey; // Assign the imported key to the variable
+            stepsResult.textContent += 'Step 3: Calculating inner hash (H(key XOR iPad || message))...\n';
+            return crypto.subtle.sign('HMAC', key, concat(ipad, messageData));
+        })
+        .then(innerHash => {
+            const innerHashHex = formatHash(innerHash);
+            stepsResult.textContent += `Step 4: Inner Hash Result:\n${innerHashHex}\n\n`;
+
+            // Now calculate the outer hash using the key XOR-ed with oPad
+            stepsResult.textContent += 'Step 5: Calculating outer hash (H(key XOR oPad || inner hash))...\n';
+            return crypto.subtle.sign('HMAC', key, concat(opad, new Uint8Array(innerHash)));
+        })
+        .then(outerHash => {
+            const outerHashHex = formatHash(outerHash);
+            stepsResult.textContent += `Step 6: Outer Hash Result (Final HMAC):\n${outerHashHex}\n\n`;
+            hmacResult.textContent = 'Final HMAC: ' + outerHashHex;
+        })
+        .catch(err => {
+            console.error('Error generating HMAC:', err);
+            stepsResult.textContent += `Error: ${err.message}\n`;
+        });
+}
+
+
+    function padKey(key, blockSize) {
+        const padded = new Uint8Array(blockSize);
+        padded.set(key);
+        return padded;
+    }
+
+    function formatKey(keyArray) {
+        return Array.from(keyArray)
+            .map(byte => byte.toString(16).padStart(2, '0'))
+            .reduce((acc, curr, index) => {
+                return acc + (index % 16 === 0 && index !== 0 ? '\n' : ' ') + curr;
+            }, '').trim();
+    }
+
+    function formatHash(hashBuffer) {
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    function concat(arr1, arr2) {
+        const concatenated = new Uint8Array(arr1.length + arr2.length);
+        concatenated.set(arr1);
+        concatenated.set(arr2, arr1.length);
+        return concatenated;
+    }
+</script>
+
+</body>
+</html>
