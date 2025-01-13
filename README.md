@@ -6,6 +6,7 @@ To execute the codes,
 * cd HMAC-Generator
 
 --> Since it's a web-based application, you don't need any server setup. You can simply open the HTML file in any web browser (e.g., Chrome, Firefox, etc.) to use the application.
+
 --> Open the main HTML file, typically index.html, by double-clicking it. The web application should load in your browser.
 
 To use,
